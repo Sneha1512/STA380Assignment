@@ -1,0 +1,746 @@
+---
+title: "Assignment 1 -STA380: Unsupervised Learning"
+author: "Agarwal,Sneha"
+date: "August 7, 2015"
+output: word_document
+---
+
+#Question 1: Data Visualization
+
+
+Installing the following libraries.
+
+
+```{r, warning= FALSE, messages = FALSE}
+library (ggplot2)
+library (plyr)
+library (grid)
+library(gridExtra)
+library (RColorBrewer)
+```
+
+Set seed to ensure reproducibility. Read in Georgia2000 data with the first row as the variables names.
+
+```{r}
+set.seed(220)
+ga2000 <- read.csv('https://raw.githubusercontent.com/jgscott/STA380/master/data/georgia2000.csv', row.names=1)
+```
+
+Calculate additional variables to facilitate analysis of vote undercount. 
+
+Diff = Ballots - Votes: This is the vote undercount--the number of ballots that were not counted.
+
+
+Pct = Diff/Ballots: This the the undercount scaled by the number of ballots in each county. 
+
+```{r}
+ga2000$diff<-ga2000$ballots-ga2000$votes #Calculate vote undercount by county
+ga2000$pct<-(ga2000$diff)/(ga2000$ballots)
+
+```
+
+Changed categorical variables `poor`, `urban`, and `atlanta` from type _int_ to type _factor_ so that these variables are interpreted as discrete categorical variables rather than continuous variables. Otherwise, they could have been taken as quantitative and not categorical.
+
+```{r}
+ga2000$poor<-factor(ga2000$poor)
+ga2000$urban<-factor(ga2000$urban)
+ga2000$atlanta<-factor(ga2000$atlanta)
+ga2000$poor<-as.factor(ga2000$poor)
+```
+
+Use pairs to create a set of scatterplots relating the correlations of all the variables with each other. 
+
+```{r}
+pairs(ga2000)
+```
+
+We see that `diff` is strongly correlated with `votes` and `ballots`. Thus, further analysis should focus on `pct`, the percent difference between `ballots` and `votes`. This will ensure that larger counties with more voters do not overshadow smaller counties with fewer voters in our analysis.Upon further expolaration, we see that `pct` appears to be particularly correlated with  `atlanta`, `urban`, and `poor`. Different equipment types `equip`do not appear to have much of an effect on `pct`.
+
+We create more bivariate plots to better visualize particular aspects of the data. The titles below represent the key takeaways from each plot.
+
+```{r, tidy=FALSE}
+
+ggplot (aes(x=equip, y=pct, fill=equip), data=ga2000)+geom_boxplot(colour='brown')+theme_minimal() +xlab("Equipment")+ylab("Percent Undercount")+ggtitle ('Undercounting is consistent across equipment.') + guides (fill=FALSE)
+
+ggplot (aes(x=poor, fill=equip), data=ga2000)+geom_bar(position="fill") + theme_minimal() + ggtitle ('Poor counties use more levers.\nLess poor counties use more optical machines.') + scale_fill_discrete ("Equipment") + scale_x_discrete(labels=c('<25%', '>25%'))+ xlab("Percent Poor")+ylab("Fraction of Counties per Category")
+
+ggplot (aes(x=equip, y=pct, col=poor), data=ga2000)+geom_point(size=3, position = position_jitter(width=.10))+theme_minimal()+xlab("Equipment")+ylab("Percent Undercount")+ggtitle ('Poor counties have more undercounting regardless of equipment') + scale_color_discrete("Percentage Poor", labels=c('<25%', '>25%'))
+
+ggplot (aes(x=urban, fill=equip), data=ga2000)+geom_bar(position="fill") + theme_minimal() + ggtitle ('More urban counties use optical and punch systems.\nMore rural counties use more lever systems') + scale_fill_discrete ("Equipment") + scale_x_discrete(labels=c('No', 'Yes')) + xlab("Predominantly Urban")+ylab("Fraction of Counties per Category")
+
+ggplot (aes(x=equip, y=pct, col=urban), data=ga2000)+geom_point(size=3, position = position_jitter(width=.10))+theme_minimal()+xlab("Equipment")+ylab("Percent Undercount")+ggtitle ('Rural counties show more undercounting regardless of equipment') + scale_color_discrete("Urban", labels=c('No', 'Yes'))
+
+ggplot (aes(x=atlanta), data=ga2000)+geom_bar(size=3)+theme_minimal()+xlab("Equipment")+ylab("Percent Undercount")+ggtitle ('Most of the counties in this dataset are non-Atlanta.\nComparing them to the Atlanta counties may be misleading') + scale_x_discrete("Atlanta", labels=c('No', 'Yes'))
+
+ggplot (aes(x=equip, y=perAA,fill=equip),data=ga2000)+geom_boxplot()+theme_minimal()+xlab("Equipment")+ylab("Percent African American")+ ggtitle ('Counties that use optical tend to have a lower percentages of African Americans.') + scale_fill_discrete(guide=FALSE)
+
+ggplot (aes(x=perAA, y=pct),data=ga2000)+geom_point(aes(color=poor),size=4)+theme_minimal()+xlab("Percent African American")+ylab("Percent Undercount")+ggtitle ('Percent undercount goes up slightly as percent African American\nincreases, but there appears to be a strong division between poor counties and less poor counties') +geom_smooth(se=FALSE, method='lm', colour='black', size=1.1)+ scale_colour_discrete ("Poor",labels=c('<25%','>25%'))
+
+```
+
+- Conclusion
+
+We see from these analyses that certain kinds of voting equipment are not associated with higher undercount percentages. However, poor and rural areas appear to suffer more undercounting--these areas are more likely to use levers. Percentage of African Americans does not seem to explain much after accounting for poverty.
+
+#Question 2- stock data- Bootstrap
+
+Installing the following libraries.
+
+```{r, warning= FALSE, messages = FALSE}
+library(mosaic)
+library(foreach)
+library(lattice)
+library(ggplot2)
+library(fImport)
+```
+
+Reading the data from the five asset classes for the period of 5 years.
+
+```{r}
+# Import a few stocks
+mystocks = c("SPY", "TLT", "LQD", "EEM","VNQ")
+myprices = yahooSeries(mystocks, from='2010-08-01', to='2015-07-31')
+# The first few rows
+head(myprices)
+
+set.seed(100)
+```
+
+Calculating the value of returns based on the function given below.
+
+```{r}
+# A helper function for calculating percent returns from a Yahoo Series
+
+YahooPricesToReturns = function(series)
+  {
+  mycols = grep('Adj.Close', colnames(myprices))
+  closingprice = myprices[,mycols]
+  N = nrow(closingprice)
+  percentreturn = as.data.frame(closingprice[2:N,]) / as.data.frame(closingprice[1:(N-1),]) - 1
+  mynames = strsplit(colnames(percentreturn), '.', fixed=TRUE)
+  mynames = lapply(mynames, function(x) return(paste0(x[1], ".PctReturn")))
+  colnames(percentreturn) = mynames
+  as.matrix(na.omit(percentreturn))
+}
+
+
+```
+
+Computing the returns first , and will later try to evaluate it.
+
+```{r}
+# Compute the returns from the closing prices
+myreturns = YahooPricesToReturns(myprices)
+head(myreturns)
+```
+
+After calculating returns, a couple of plots to just evaluate the returns and see if something interesting can be found.
+
+```{r}
+# These returns can be viewed as draws from the joint distribution
+pairs(myreturns)
+
+```
+
+
+There isn't much information here. Few more plots to check amrket returns oer time.
+
+```{r}
+# Look at the market returns over time
+plot(myreturns[,1], type='l')
+plot(myreturns[,2], type='l')
+plot(myreturns[,3], type='l')
+plot(myreturns[,4], type='l')
+plot(myreturns[,5], type='l')
+
+```
+
+These plots, just showed that there was a variation in return suring some particular period of time over the period of 5 years maybe. 
+
+In order to check the risks associated with each returns, variance has been calculated for each of the returns.The value of variance, can help us determining the risk. Higher the variance of the returns, the higher risks are at the stake and vice-versa.
+
+```{r}
+#######
+# A classical way to estimate portfolio variability: use the CAPM
+#######
+#
+var(myreturns[,1])
+#value 8.744129e-05
+
+var(myreturns[,2])
+#value 9.541397e-05
+
+var(myreturns[,3])
+#value 1.282571e-05
+
+var(myreturns[,4])
+#value 0.0001884399
+
+var(myreturns[,5])
+#value 0.0001327268
+
+```
+
+Looking at the values of variances, we can see that the Stocks, SPY, TLT and LQD have much lesser variances than the rest other two. So, we can consider than as safer than the EEM and VNQ stocks.
+
+Before starting the even sampling and bootstraping, the beta value for the linear regressions of returns of each stock with the market is calculated. We first fit the linear regression model and then, find their respective coefficients, which are the beta values.
+
+```{r}
+
+# First fit the market model to each stock
+lm_SPY_TLT = lm(myreturns[,1] ~ myreturns[,2])
+lm_SPY_LQD = lm(myreturns[,1] ~ myreturns[,3])
+lm_SPY_EEM = lm(myreturns[,1] ~ myreturns[,4])
+lm_SPY_VNQ = lm(myreturns[,1] ~ myreturns[,5])
+
+# The estimated beta for each stock based on daily returns
+coef(lm_SPY_TLT); coef(lm_SPY_LQD); coef(lm_SPY_EEM); coef(lm_SPY_VNQ)
+
+```
+
+Here looking at the beta values, we see that minimum beta values are for the same stocks which have lesser variances as calculated above. They can be categorised as the safe stocks.
+
+Now, we first do the EVEN SPLIT. The $100,000 to invest can divided equally into these 5 stocks and 20% of this amount is invested on each stock.
+
+NOTE: The portfolio is rebalanced each day at zero transaction cost.So, after each calculation, the holdings are set back.
+
+```{r}
+##Bootstrap
+# Sample a random return from the empirical joint distribution
+# This simulates a random day
+set.seed(100)
+return.today = resample(myreturns, 1, orig.ids=FALSE)
+return.today
+
+# Now loop over four trading weeks
+totalwealth = 100000
+weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+holdings = weights * totalwealth
+n_days = 20
+wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+for(today in 1:n_days) {
+	return.today = resample(myreturns, 1, orig.ids=FALSE)
+	holdings = holdings + holdings*return.today
+	totalwealth = sum(holdings)
+	wealthtracker[today] = totalwealth
+	holdings = weights * totalwealth
+}
+totalwealth
+
+plot(wealthtracker, type='l')
+
+```
+
+
+A value of total wealth could be found. But, it does not necessarily give a good idea. So, the simulation is done 5000 times and then the total wealth is calculated in order to look for more accurate results.
+
+```{r}
+# Now simulate many different possible trading years!
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+	totalwealth = 100000
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+		return.today = resample(myreturns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+		holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+totalwealth
+
+```
+
+After the simulation result we see ~ $103,540(for the current run) is the return from even split. 
+We now check the histogram graphs for the return values we found so far.
+
+```{r}
+head(sim1)
+hist(sim1[,n_days], 25)
+
+```
+
+Below is the graph for returns minus the investment amount. That is, the profit/loss incurred for this even split.And calculated the 5% value at risk.
+
+```{r}
+# Profit/loss
+hist(sim1[,n_days]- 100000, 25)
+
+# Calculate 5% value at risk
+quantile(sim1[,n_days], 0.05) - 100000
+# 5% 
+# -3728.326
+
+```
+
+#BOOTSTRAP
+Safer than the even split are the first three stocks. And randomly 40%, 30% and 30% of the investment amount has been assigned to them. 
+
+
+```{r}
+
+# Now loop over for four trading weeks
+totalwealth = 100000
+weights = c(0.4, 0.3, 0.3,0,0)
+holdings = weights * totalwealth
+n_days = 20
+wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+for(today in 1:n_days) {
+	return.today = resample(myreturns, 1, orig.ids=FALSE)
+	holdings = holdings + holdings*return.today
+	totalwealth = sum(holdings)
+	wealthtracker[today] = totalwealth
+	holdings = weights * totalwealth 
+}
+totalwealth
+
+plot(wealthtracker, type='l')
+```
+
+
+As shown above, running the iteration for 5000 times.
+
+```{r}
+# Now simulate many different possible trading years!
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+	totalwealth = 100000
+	weights = c(0.4, 0.3, 0.3,0,0)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+		return.today = resample(myreturns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+		holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+totalwealth
+
+#values 99447.75
+```
+
+We plot histograms in the simialr way like we did for even split.
+
+```{r}
+head(sim1)
+hist(sim1[,n_days], 25, main ="Safer stocks")
+
+# Profit/loss
+hist(sim1[,n_days]- 100000, main ="Safer stocks Profit/Loss")
+
+# Calculate 5% value at risk
+quantile(sim1[,n_days], 0.05) - 100000
+# 5% 
+#value is -2006.724  
+
+```
+
+C. Bootstraping for the aggresive stocks, in the similar way keeping 40% and 60% to the aggresive stocks.
+
+```{r}
+  # Now loop over two trading weeks
+totalwealth = 100000
+weights = c(0,0,0, 0.4, 0.6)
+holdings = weights * totalwealth
+n_days = 20
+wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+for(today in 1:n_days) {
+	return.today = resample(myreturns, 1, orig.ids=FALSE)
+	holdings = holdings + holdings*return.today
+	totalwealth = sum(holdings)
+	wealthtracker[today] = totalwealth
+	holdings = weights * totalwealth
+}
+totalwealth
+#98227.28
+plot(wealthtracker, type='l')
+
+```
+
+```{r}
+
+# Now simulate many different possible trading years!
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+	totalwealth = 100000
+	weights = c(0,0,0, 0.4, 0.6)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+		return.today = resample(myreturns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+		holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+totalwealth
+#values 108265.3
+
+```
+
+```{r}
+head(sim1)
+hist(sim1[,n_days], 25, main ="Aggresive stocks")
+
+# Profit/loss
+hist(sim1[,n_days]- 100000, main ="Aggresive stocks profit/loss")
+
+# Calculate 5% value at risk
+quantile(sim1[,n_days], 0.05) - 100000
+# 5% 
+# value -2006.724
+```
+
+-  Conclusion
+After examining everything above, the forst three stocks are the safer ones, and the rest two are the aggresive ones.
+
+#Question 3: Wine data
+
+The data in wine.csv contains information on 11 chemical properties of 6500 different bottles of vinho verde wine from northern Portugal. In addition, two other variables about each wine are recorded:
+whether the wine is red or white
+the quality of the wine, as judged on a 1-10 scale by a panel of certified wine snobs
+
+First, running the PCA for dimensionality reduction and trying to see if PCA is able to give us distinct clusters, both for quality and color.
+
+```{r, message= FALSE, warning=FALSE}
+library(ggplot2)
+library(psych)
+library(mosaic)
+library(foreach)
+library(lattice)
+
+winedata = read.csv("https://raw.githubusercontent.com/jgscott/STA380/master/data/wine.csv", header=TRUE)
+head(winedata)
+
+wine = winedata[1:11]
+set.seed(200)
+```
+
+- PCA 
+Scaled the dataset with just the first 11 variables.
+
+```{r}
+pc1 = prcomp(wine, scale.=TRUE)
+#pc1
+summary(pc1)
+#head(pc1)
+plot(pc1)
+```
+
+
+Below is the biplot, which is showing:
+
+the score of each case (i.e. records data) on the first two principal components
+the loading of each variable (i.e., attribute) on the first two principal components
+
+```{r}
+biplot(pc1)
+```
+
+Looking at the PCA:
+
+```{r}
+
+loadings = pc1$rotation
+head(loadings)
+scores = pc1$x
+head(scores)
+
+```
+
+Further tried to find the significance of the PCA in terms of determining the quality and color of the wine. Qplot for color gives us some distinct clusters.
+
+```{r}
+qplot(scores[,1], scores[,2], color=winedata$color, xlab='Component 1', ylab='Component 2')
+qplot(scores[,1], fill=winedata$color, xlab='Component 1', ylab='Frequency')
+```
+
+Thus, by dimension reduction we could find 2 distinct cluster for red and white wine. BUT, there is some considerable amount of overlap.Also,looking at the summary of PCA calculated, we see that, we need to compute 7 dimensions to assess 90% of the data correctly.
+
+Now, checking the PCA plot for quality.
+
+```{r}
+#qplot for quality 
+qplot(scores[,1], scores[,2], color=winedata$quality, xlab='Component 1', ylab='Component 2')
+
+```
+
+According to the data there are 7 scaler quantity that describes quantity(3,4,5,6,7,8,9). After looking at the qplot, nothing much could be concluded in terms of cluster formation.
+
+We thus try K.means clustering.
+
+- K-MEANS
+The kmeans clustering is done on the scaled data and 2 clusters are formed.(The reason I took 2 clusters, is that I want to see if the data gets segregated into red and white wine by k-means cluster or not). Plotted the clusters.
+
+```{r}
+
+# Center/scale the data
+wine_scaled <- scale(wine, center=TRUE, scale=TRUE) 
+head(wine_scaled)
+
+
+cluster_all <- kmeans(wine_scaled, centers=2, nstart=50)
+names(cluster_all)
+
+#cluster_all$centers - I examined them. Choosing not to display them for submission
+#cluster_all$cluster
+
+
+# Which cars are in which clusters?
+length(which(cluster_all$cluster == 1))
+length(which(cluster_all$cluster == 2))
+
+
+# A few plots with cluster membership shown
+qplot(color, fill = factor(cluster_all$cluster),data=winedata)
+
+```
+
+Looking at the plot, we can easily see, that data has been clearly been divided into red wine and white wine sections with a little overplapping only.
+
+Plotting a contingency table to look at the 
+
+```{r}
+# A 2x2 contingency table
+t1 = xtabs(~winedata$color + cluster_all$cluster)
+t1
+p1 = prop.table(t1, margin=1)
+p1
+
+
+```
+
+The results are clear. in the entire data in cluster 1, it had 98% of white wine and similarly in the entire data in cluster 2, it had 98% of red wine.
+
+Tried making 7 clusters to see if quality can be determined looking at the dataset variables. Again did a kmeans for the entire dataset with 7 clusters.
+
+```{r}
+
+cluster_all2 <- kmeans(wine_scaled, centers=7, nstart=50)
+names(cluster_all2)
+
+# A few plots with cluster membership shown
+qplot(quality, fill = factor(cluster_all2$cluster),data=winedata)
+
+```
+
+The clusters have no significance. how are these wines rated by the panel of wine snobs is unclear. There is no evidence, as to how are thee ratings being affected. 
+We can see that, the average rating is , 5-6 , for a lot of wines.
+
+```{r}
+
+# A 2x2 contingency table
+t1 = xtabs(~winedata$quality + cluster_all2$cluster)
+t1
+
+p1 = prop.table(t1, margin=1)
+p1
+
+```
+
+-  Conclusion
+Having ran PCA and kmeans clustering, and seen the observations as above, kmeans clustering makes better assessment for this particular dataset in evaluating the color of the wine.
+However, I discovered none of these technique was clearly capable of sorting the higher from the lower quality wines. The criteria for rating wines by the panel seems ambiguious.
+
+#Question 4: Social_Marketing data
+
+- We are dealing with Twitter post ("tweet") by each of the NutrientH20's followers over a seven-day period in June 2014. Each tweet was categorized based on its content using a pre-specified scheme of 36 different categories, each representing a broad area of interest (e.g. politics, sports, family, etc.)
+
+- AIM: To find MARKET SEGMENTS between the set of tweets.
+APPROACH: Looking at the 'interests' being talked about by the humans, we can categorise different kinds of people. For example- people who have interest in fashion/beauty could PROBABLY belong to the same segment.
+
+- I tried Using Hclust approach too. But, since there is so much of overlap between the interests. It doesn't look cnvincing.Please find my approaches below.
+
+```{r, message= FALSE, warning=FALSE}
+library(ggplot2)
+library(psych)
+library(mosaic)
+library(foreach)
+library(lattice)
+
+tweets = read.csv("https://raw.githubusercontent.com/jgscott/STA380/master/data/social_marketing.csv",header = TRUE)
+set.seed(78705)
+```
+
+Removing the first column having unique identifier.
+
+```{r}
+tweets = tweets[,-1]
+```
+
+Scaling the data.
+
+```{r}
+tweets_scaled <- scale(tweets, center=TRUE, scale=TRUE)
+```
+
+Trying hclust. First with average and also with single linkage. But, it was not really useful. I had cut the tree into 5 parts, but, was not able to segment the people based on these results.
+
+```{r}
+
+# Form a pairwise distance matrix using the dist function
+tweets_dist = dist(tweets_scaled, method='euclidean')
+
+
+# Now run hierarchical clustering
+hier_tweets = hclust(tweets_dist, method='average')
+
+# Cut the tree into 5 clusters
+cluster1 = cutree(hier_tweets, k=5)
+summary(factor(cluster1))
+
+# Plot the dendrogram
+plot(cluster1, cex=0.8)
+
+```
+
+Tried single linkage too.But the results were not convincing or much interpretable.
+
+```{r}
+#using single linkage
+hier_tweets2 = hclust(tweets_dist, method='single')
+cluster2 = cutree(hier_tweets2, k=5)
+summary(factor(cluster2))
+
+plot (cluster2, cex=0.8)
+
+```
+
+- MAIN APPRAOCH
+Kmeans clustering.
+There are 36 variables and I need to define the number I cluster I want to create. So,creating an elbow chart to determine the value of K.
+
+```{r}
+SS <- (nrow(tweets_scaled)-1)*sum(apply(tweets_scaled,2,var))
+for (i in 2:30) SS[i] <- sum(kmeans(tweets_scaled,centers=i)$withinss)
+plot(1:30, SS, type="b", xlab="Number of Clusters",
+     ylab="sum of squares within groups")
+
+```
+
+Interpretation: The graph is quite flattened after the 10th value, thus, the k-value for clustering should be around or less than 10 maybe. I chose to keep K= 10.
+
+Clustering all the tweets, into 10 clusters.
+
+
+```{r}
+set.seed(78705)
+cluster_all <- kmeans(tweets_scaled, centers=10, nstart=50) 
+
+```
+
+Calculating the RSS: Just examining. The RSS value wasn't high so, not much interpretation can be done.
+
+```{r}
+#calculate RSS
+cluster_all$betweenss/cluster_all$totss
+
+#cluster_all$centers  - I examined them, but not letting them be the part of the code , as it will increase to a LOT of pages.
+#cluster_all$cluster
+
+```
+
+Unscaling the cluster data , which returns the means of the values of the cluster data for the particular attribute.
+
+```{r}
+mu=attr(tweets_scaled,"scaled:center")
+sigma=attr(tweets_scaled,"scaled:scale")
+cluster_all$centers[1,]
+cluster_all$centers[1,]*sigma + mu
+```
+ 
+Now, we some the 2 clusters - scaled and unscaled.This gives us the 
+- standard dev on the first cluster (row 1)
+- unscaled average value on the clusters (row 2)
+
+#Now, we analysis each cluster -one by one and try to find a segment
+
+```{r}
+rbind(cluster_all$center[1,],(cluster_all$center[1,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- everything that has standard dev>2: online gaming, college uni, sports_playing: probably college kid cluster segment. They are  tweeting about this in the 97.5th percentile. However, out of these 3 features, online gaming and college uni are being tweeted about 10 times on average. 
+
+```{r}
+rbind(cluster_all$center[2,],(cluster_all$center[2,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- nothing above 2. No segment found.
+
+```{r}
+rbind(cluster_all$center[3,],(cluster_all$center[3,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- nothing above 2. No segment found.
+
+```{r}
+rbind(cluster_all$center[4,],(cluster_all$center[4,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- news, automative are highest- Segment could be the car guys - tweeting more about news compared to automative- low in parenting so probably not parents or women.
+
+```{r}
+rbind(cluster_all$center[5,],(cluster_all$center[5,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- spam and adult are highest - bot category mostly. A lot of adult content and less spams amongst this 2 categories.
+
+```{r}
+rbind(cluster_all$center[6,],(cluster_all$center[6,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- tvfilm and art are highest- could be a category of atrsy people who ike discussion at film and are creative bunch. Mostly tweeting in equal number 
+
+```{r}
+rbind(cluster_all$center[7,],(cluster_all$center[7,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- Quite interesting category with a mix of food, family, school, sports_fandom, religion, parenting- This could definetly be a parents segment, majority of them MAYBE the dads, tweeting about these topics.
+
+```{r}
+rbind(cluster_all$center[8,],(cluster_all$center[8,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- A combination of personal fitness, health nutrition, outdoors- most tweets about health nutrition. This could be the category of health freaks and Fitness and diet specialists.
+
+```{r}
+rbind(cluster_all$center[9,],(cluster_all$center[9,]*sigma + mu))
+```
+
+INTERPRETATION:
+
+- A new intersting combination of travel, politics, computers- This could be a category of young professionals specially men.
+
+```{r}
+rbind(cluster_all$center[10,],(cluster_all$center[10,]*sigma + mu))
+```
+
+By far the most interesting category having photo sharing, beauty, cooking, fashion- this could be adult young women shaing common interests.
+
+- CONCLUSION
+Using K Means, I was able to segment the tweets into kinds of users.
+
+
+
