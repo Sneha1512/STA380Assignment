@@ -1,0 +1,366 @@
+
+#Homework2- STA380: Agarwal,Sneha
+#Question 1
+
+###Loading the libraries and reading file ABIA.csv
+
+```{r}
+library(ggplot2)
+library(XML)
+airport = read.csv("https://raw.githubusercontent.com/jgscott/STA380/master/data/ABIA.csv")
+attach(airport)
+
+```
+
+###There could be a number of exploratory analysis on this question. But, I choose to look at the delays and find its relationship with the Month and DayofWeek. What are the times, passengers should avoid booking tickets as there might be delay in flight schedules?
+
+###Findings:
+-  For the months of September, October, November delay is least
+
+```{r}
+delay =aggregate(airport$ArrDelay ,by = list(Month), FUN = mean, na.rm = TRUE)
+plot(delay$Group.1, delay$x, type = "l", col = 'red', xlab = 'Months of the year', ylab = 'Average arrival Delay')
+
+```
+
+- For the Fridays we have maximum delay and least for Saturdays.
+
+```{r}
+delay1 =aggregate(airport$ArrDelay ,by = list(DayOfWeek), FUN = sum, na.rm = TRUE)
+plot(delay1$Group.1, delay1$x, type = "l", col = 'blue', xlab = 'Day of the week', ylab = 'Average arrival Delay')
+
+```
+
+- Towards the begining of the month the delays are less and increases towards the second half.
+
+```{r}
+delay2 =aggregate(airport$ArrDelay ,by = list(DayofMonth), FUN = sum, na.rm = TRUE)
+plot(delay2$Group.1, delay2$x, type = "l", col = 'green', xlab = 'Each Day of the Month', ylab = 'Average arrival Delay')
+
+```
+
+###Another thing I checked was the number of cancellations over the year and week. So basically, what are the times when there is more possibilty of flights getting cancelled?
+
+###Findings
+
+- In the month of March, we have the highest number of cancellations.
+
+```{r}
+#Finding the relationship between the number of cancellations for each month
+sum(airport$Cancelled)
+monthbycancellation=aggregate(Cancelled,by = list(Month), sum)
+Cancellations <- as.matrix(monthbycancellation[2])
+barplot(t(Cancellations),xlab="Months Jan-Dec",ylab="Total Cancellations", col = 'darkblue')
+
+```
+
+- On Tuesdays we have the highest number of cancellations.
+
+```{r}
+#Finding the relationship between the number of cancellations for each day
+weekdaybycancellation=aggregate(Cancelled,by = list(DayOfWeek), sum)
+Cancellations <- as.matrix(weekdaybycancellation[2])
+barplot(t(Cancellations),xlab="DayofWeek Monday -Sunday",ylab="Total Cancellations", col = 'red')
+
+
+```
+
+
+#Question2
+
+###Loading the libraries required.
+
+```{r, warning=FALSE, message=FALSE}
+library(tm)
+library(randomForest)
+library(e1071)
+library(rpart)
+library(ggplot2)
+library(caret)
+
+```
+
+###Looking at the CORPUS data and training the data.
+
+```{r, results='hide'}
+#initialising reader function
+readerPlain = function(fname){readPlain(elem=list(content=readLines(fname)), id=fname, language='en') }
+
+#Training data set -CORPUS
+
+author_dirs = Sys.glob('C:/Users/Sneha/Documents/Education/STA380/data/ReutersC50/C50train/*')
+file_list = NULL
+train_labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=68)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  train_labels = append(train_labels, rep(author_name, length(files_to_add)))
+}
+
+# Named conversion & cleanup
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+#Initialize Training Corpus
+train_corpus = Corpus(VectorSource(all_docs))
+names(train_corpus) = file_list
+
+# Preprocessing
+train_corpus = tm_map(train_corpus, content_transformer(tolower)) 
+train_corpus = tm_map(train_corpus, content_transformer(removeNumbers)) 
+train_corpus = tm_map(train_corpus, content_transformer(removePunctuation)) 
+train_corpus = tm_map(train_corpus, content_transformer(stripWhitespace)) 
+train_corpus = tm_map(train_corpus, content_transformer(removeWords), stopwords("SMART"))
+
+```
+
+###Create training DTM & dense matrix
+
+```{r,results='hide'}
+
+DTM_train = DocumentTermMatrix(train_corpus)
+DTM_train = removeSparseTerms(DTM_train, 0.975)
+#DTM_train = as.matrix(DTM_train)
+
+```
+
+###Now let us test the CORPUS data on training dataset. For the test data took removed 93% of sparse terms.
+
+```{r, results='hide'}
+#Looking at the c50test folder
+
+author_dirs = Sys.glob('C:/Users/Sneha/Documents/Education/STA380/data/ReutersC50/C50test/*')
+file_list = NULL
+test_labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=67)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  test_labels = append(test_labels, rep(author_name, length(files_to_add)))
+}
+
+# Named conversion & cleanup
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+#Initialize Testing Corpus
+test_corpus = Corpus(VectorSource(all_docs))
+names(test_corpus) = file_list
+
+#Preprocessing
+test_corpus = tm_map(test_corpus, content_transformer(tolower)) 
+test_corpus = tm_map(test_corpus, content_transformer(removeNumbers)) 
+test_corpus = tm_map(test_corpus, content_transformer(removePunctuation)) 
+test_corpus = tm_map(test_corpus, content_transformer(stripWhitespace)) 
+test_corpus = tm_map(test_corpus, content_transformer(removeWords), stopwords("SMART"))
+
+#Creating dictionary
+
+reuters_dict = NULL
+reuters_dict = dimnames(DTM_train)[[2]]
+
+#Create testing DTM & matrix using dictionary words only
+DTM_test = DocumentTermMatrix(test_corpus, list(dictionary=reuters_dict))
+DTM_test = removeSparseTerms(DTM_test, 0.93)
+
+
+```
+
+###Converting DTMs into the data frames
+
+```{r, results='hide'}
+DTM_train_df = as.data.frame(inspect(DTM_train))
+DTM_test_df = as.data.frame(inspect(DTM_test))
+
+```
+
+##Model 1 - Creating a Naive Bayes Model
+
+###The features are the class of each author.I built a model and a predicted the test_df on the model.
+
+```{r,results='hide'}
+######### Naive Bayes Model #########
+
+#Creating the model with the training dataframe and labels are the authors.
+NBModel = naiveBayes(x = DTM_train_df, y = as.factor(train_labels), laplace=1)
+
+#Predicting the model on the test dataframe
+NBPredict = predict(NBModel, DTM_test_df)
+
+```
+
+
+###Let us now look into the details of this model. The table NBtable has the predicted values , and the label for each value. We get the frequency of each matched and unmatched pair, for the correctly predicted values
+
+```{r, results='hide'}
+
+NBtable = as.data.frame(table(NBPredict,test_labels))
+#head(NBtable)
+```
+
+###Let's now plot the above table and see that how does it look visually. We are plotting the predicted value and the actual value and the frequency.
+
+```{r}
+plot = ggplot(NBtable)
+plot + geom_tile(aes(x=test_labels, y=NBPredict, alpha=Freq)) + 
+    scale_x_discrete(name="Actual Class") + 
+    scale_y_discrete(name="Predicted Class") +
+    theme(axis.text.x = element_text(angle = 80, hjust = 1))
+
+```
+
+###Let us contruct a confusion matrix. And check how well the model could perform. In the Test data set, when we removed the sparse terms, I took the percentage as 93% to get a better prediction. 
+
+```{r}
+NBconfusion = confusionMatrix(table(NBPredict,test_labels))
+NBconfusion$overall
+
+```
+
+###The accuracy of this model is 29.56%. For this bag of words, the prediction is pretty good. As, there the dataset is huge. We have 50 author data and even more number of .txt files.
+
+
+###But, let us try another model.
+
+##Model 2 - Random Forest Model
+
+###To execute this model, we need toadd another column in the training and test dataset. We first convert the dataset into matrix and then add the column.
+
+```{r}
+
+######### Random Forest Model #########
+library(plyr)
+
+DTM_test = as.matrix(DTM_test)
+DTM_train = as.matrix(DTM_train)
+
+words <- data.frame(DTM_test[,intersect(colnames(DTM_test), colnames(DTM_train))])
+readcol <- read.table(textConnection(""), col.names = colnames(DTM_train), colClasses = "integer")
+
+DTM_test_final = rbind.fill(words, readcol)
+DTM_test_df = as.data.frame(DTM_test_final)
+
+```
+
+###Now let us do the modelling part.
+
+```{r}
+modelRF = randomForest(x=DTM_train_df, y=as.factor(train_labels), mtry= 3, ntree=200)
+
+```
+
+###Predicting the test data 
+
+```{r}
+predictRF = predict(modelRF, data=DTM_test_final)
+```
+
+
+###Looking at the table having the predicted values along with different class of authors.
+
+```{r}
+tableRF = as.data.frame(table(predictRF,test_labels))
+
+```
+
+
+###Let's construct a confusion matrix and check the accuracy.
+
+```{r}
+confusionRF = confusionMatrix(table(predictRF,test_labels))
+confusionRF$overall
+
+```
+
+###The accuracy with mtry = 3, is 69.84%. I also inspected the accuracy by increasing th number of mtry and and noticed that the accuracy increases with mtry of 4 and 5(around 75%) . But, I did not choose those them as it would be overfitting the data.
+
+##Conclusion
+###The randon forest model works better for me than the Naive Bayes.
+
+
+#Question3
+
+###This data mining is very interesting and useful to understand the consumer patterns.From the business prespective, if the supplier wants to increase his sale, he could look at the consumer preferences and then place the items in the store accordingly.
+
+###Loading the required library.
+
+```{r}
+library(arules)
+#detach(package:tm, unload=TRUE)
+```
+
+###Loading the groceries data, and as mentioned in the question took separator as comma and format as basket. And trying to look at the different association rules.
+
+```{r, echo=FALSE}
+groceries<- read.transactions("C:/Users/Sneha/Documents/Education/STA380/data/groceries.txt", format = 'basket', sep = ',')
+```
+
+###Now we create some association rules, by randomly selecting the support value  , confidence and the maxlen. I wanted to look at a lot of association rules in the first place, so that I can find smaller subsets and try to see some interesting associations. I could have chosen values of support and confidence to be higher and get lesser rules, but I wanted to look at the a lot of associations to find good associations in the subset.
+
+```{r}
+groceriesrule <- apriori(groceries,parameter=list(support=.001, confidence=.15, maxlen=4))
+
+```
+
+###groceriesrule has a set of 24907 associations. Now, I would like to see some patterns in the subsets.
+
+```{r, results='hide'}
+#inspect
+# Look at the output
+inspect(groceriesrule)
+
+```
+
+###First subset : I wanted to see the associations when lift is high, that is the dependent association by X and Y to be higher.
+
+```{r}
+## Choose a subset
+inspect(subset(groceriesrule, subset=lift > 20))
+
+```
+
+### For the above result, I see that Instant food products are highly likely to be purchased if hamburger met and soda is purchased, and not standalone. Similarly we can see three other associaitons. I also noticed that these associations have RELATIVELY high confidence from the complete set of rules.
+
+###Now I want to inspect the rules more, to see interesting associations. What I realise is, getting a lot of associations in a subset is not going to give us any important interpretation, so I choose to create subset with lesser rules.
+
+###I am now trying to look for rules having confidence interval of 95%, that, is what is the probablity of buying Y when we are buying X.
+
+```{r}
+inspect(subset(groceriesrule, subset=confidence > 0.95))
+
+```
+
+###Looking at this result, it shows whole milk is purchased with a lot of combination of products. Which totally makes sense, like people do buy milk whenever they go shopping, like  even if they buy anything.
+
+###Another thing I wanted to look at, what happens when we keep a higher support value. That is of all the transactions, when I take those Xs, which are highly likely to be purchases. Also, adding to that, I took a confidence of 50%, to see the association rules, of Y with these commonly purchased Xs.
+
+```{r}
+inspect(subset(groceriesrule, subset=support > .01 & confidence > 0.5))
+
+```
+
+###This result is pretty much similar to the above one. One thing I noticed here is 'Other vegetables' are mostly purchased whenever 'root vegetables' are purchased.
+
+###Then I looked at the associations with same support , but, confidence as very low. So, I am looking at the least likely good association.
+
+```{r}
+inspect(subset(groceriesrule, subset=support > .01 & confidence < 0.16))
+
+```
+
+
+###I get a set of 12 rules, with bizzare combinations of things. And it totally makes sense that, these combinations have low confidence. Like for example, from the above result, whipped/sour cream and root vegetables are purchased together with the confidence of around 15% only.
+
+##Conclusion
+###There could be a lot of playing around this dataset to find interesting rules. I have presented some 3 of my findings but, had looked on several others.
+
+
+
+
+
+
+
+
