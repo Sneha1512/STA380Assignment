@@ -294,7 +294,7 @@ library(arules)
 
 ###Loading the groceries data, and as mentioned in the question took separator as comma and format as basket. And trying to look at the different association rules.
 
-```{r, echo=FALSE}
+```{r}
 groceries<- read.transactions("https://raw.githubusercontent.com/jgscott/STA380/master/data/groceries.txt", format = 'basket', sep = ',')
 ```
 

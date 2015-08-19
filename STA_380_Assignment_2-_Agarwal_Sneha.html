@@ -291,7 +291,7 @@ DTM_test_df = as.data.frame(DTM_test_final)</code></pre>
 <pre class="r"><code>confusionRF = confusionMatrix(table(predictRF,test_labels))
 confusionRF$overall</code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
-##      0.7076000      0.7016327      0.6893338      0.7253787      0.0200000 
+##      0.7052000      0.6991837      0.6868940      0.7230241      0.0200000 
 ## AccuracyPValue  McnemarPValue 
 ##      0.0000000            NaN</code></pre>
 </div>
@@ -330,6 +330,7 @@ confusionRF$overall</code></pre>
 </div>
 <div id="loading-the-groceries-data-and-as-mentioned-in-the-question-took-separator-as-comma-and-format-as-basket.-and-trying-to-look-at-the-different-association-rules." class="section level3">
 <h3>Loading the groceries data, and as mentioned in the question took separator as comma and format as basket. And trying to look at the different association rules.</h3>
+<pre class="r"><code>groceries&lt;- read.transactions(&quot;https://raw.githubusercontent.com/jgscott/STA380/master/data/groceries.txt&quot;, format = 'basket', sep = ',')</code></pre>
 </div>
 <div id="now-we-create-some-association-rules-by-randomly-selecting-the-support-value-confidence-and-the-maxlen.-i-wanted-to-look-at-a-lot-of-association-rules-in-the-first-place-so-that-i-can-find-smaller-subsets-and-try-to-see-some-interesting-associations.-i-could-have-chosen-values-of-support-and-confidence-to-be-higher-and-get-lesser-rules-but-i-wanted-to-look-at-the-a-lot-of-associations-to-find-good-associations-in-the-subset." class="section level3">
 <h3>Now we create some association rules, by randomly selecting the support value , confidence and the maxlen. I wanted to look at a lot of association rules in the first place, so that I can find smaller subsets and try to see some interesting associations. I could have chosen values of support and confidence to be higher and get lesser rules, but I wanted to look at the a lot of associations to find good associations in the subset.</h3>
@@ -351,7 +352,7 @@ confusionRF$overall</code></pre>
 ## set transactions ...[169 item(s), 9835 transaction(s)] done [0.00s].
 ## sorting and recoding items ... [157 item(s)] done [0.00s].
 ## creating transaction tree ... done [0.00s].
-## checking subsets of size 1 2 3 4 done [0.01s].
+## checking subsets of size 1 2 3 4 done [0.02s].
 ## writing ... [24907 rule(s)] done [0.00s].
 ## creating S4 object  ... done [0.01s].</code></pre>
 </div>
